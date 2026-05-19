@@ -15,8 +15,14 @@ async function main() {
   const marketAddress = await predictionMarket.getAddress();
   console.log("PredictionMarket:", marketAddress);
 
-  await reputationSystem.setPredictionMarket(marketAddress);
-  console.log("Connected contracts");
+  const WorldCupBetting = await ethers.getContractFactory("WorldCupBetting");
+  const worldCupBetting = await WorldCupBetting.deploy(repAddress);
+  await worldCupBetting.waitForDeployment();
+  const worldCupBettingAddress = await worldCupBetting.getAddress();
+  console.log("WorldCupBetting:", worldCupBettingAddress);
+
+  await reputationSystem.setPredictionMarket(worldCupBettingAddress);
+  console.log("Connected ReputationSystem to WorldCupBetting");
 
   const MockERC20 = await ethers.getContractFactory("MockERC20");
   const usdc = await MockERC20.deploy("Mock USDC", "USDC");
@@ -26,6 +32,7 @@ async function main() {
 
   console.log("\n=== SAVE THESE ADDRESSES ===");
   console.log("NEXT_PUBLIC_PREDICTION_MARKET_ADDRESS=", marketAddress);
+  console.log("NEXT_PUBLIC_WORLD_CUP_BETTING_ADDRESS=", worldCupBettingAddress);
   console.log("NEXT_PUBLIC_REPUTATION_SYSTEM_ADDRESS=", repAddress);
   console.log("NEXT_PUBLIC_MOCK_USDC_ADDRESS=", usdcAddress);
 }

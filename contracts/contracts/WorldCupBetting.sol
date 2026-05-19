@@ -75,20 +75,8 @@ contract WorldCupBetting is ReentrancyGuard, Ownable {
     event PositionListed(uint256 betId, uint256 amount);
     event PositionSold(uint256 betId, address seller, address sender, uint256 amount);
 
-    error CreateMarket_FewOutcomes();
-    error CreateMarket_ResolutionInPast();
-    error CreateMarket_InvalidArbitrator();
-    error PlaceBet_SlippageExceeded();
-    error ResolveMarket_InvalidOutcome();
-    error ResolveMarket_ResolutionTooEarly();
-    error ResolveMarket_MarketNotOpen();
-
     constructor(address _reputationSystem) Ownable(msg.sender) {
         reputationSystem = IReputationSystem(_reputationSystem);
-    }
-
-    function _candidateStub() internal pure {
-        revert("WorldCupBetting: candidate implementation required");
     }
 
     function createMarket(
@@ -99,9 +87,9 @@ contract WorldCupBetting is ReentrancyGuard, Ownable {
         address oracleAddress,
         address tokenAddress
     ) external returns (uint256) {
-        if(outcomes.length < 2) revert CreateMarket_FewOutcomes();
-        if(resolutionTime < block.timestamp) revert CreateMarket_ResolutionInPast();
-        if(oracleAddress == address(0)) revert CreateMarket_InvalidArbitrator();
+        require(outcomes.length >= 2, "Need at least 2 outcomes");
+        require(resolutionTime >= block.timestamp, "Resolution must be in future");
+        require(oracleAddress != address(0), "Invalid arbitrator");
 
         marketCount++;
         Market storage newMarket = markets[marketCount];
@@ -124,7 +112,9 @@ contract WorldCupBetting is ReentrancyGuard, Ownable {
         Market storage selectedMarket = markets[id];
 
         require(selectedMarket.status == MarketStatus.Open, "Market closed");
-        require(selectedMarket.resolutionTime >= block.timestamp, "Market closed");
+        require(block.timestamp < selectedMarket.resolutionTime, "Market closed");
+        require(outcomeIndex < selectedMarket.outcomes.length, "Invalid outcome");
+        require(amount > 0, "Invalid amount");
 
         uint256 shares = calculateShares(id, outcomeIndex, amount);
         require(shares >= minimum, "Slippage exceeded");
@@ -158,11 +148,10 @@ contract WorldCupBetting is ReentrancyGuard, Ownable {
     function resolveMarket(uint256 id, uint256 winningOutcome) external {
         Market storage market = markets[id];
 
-        if(market.status != MarketStatus.Open) revert ResolveMarket_MarketNotOpen();
+        require(market.status == MarketStatus.Open, "Market not open");
         require(block.timestamp >= market.resolutionTime, "Too early");
-        if(winningOutcome > market.outcomes.length) revert ResolveMarket_InvalidOutcome();
         
-        require(msg.sender == market.arbitrator, "Only arbitrator"); //hacerlo fuera de error
+        require(msg.sender == market.arbitrator, "Only arbitrator");
         require(winningOutcome < market.outcomes.length, "Invalid outcome");
 
         market.status = MarketStatus.Resolved;
@@ -174,6 +163,8 @@ contract WorldCupBetting is ReentrancyGuard, Ownable {
     function claimWinnings(uint256 betId) external nonReentrant {
         Bet storage bet = bets[betId];
         Market storage market = markets[bet.marketId];
+        require(msg.sender == bet.bettor, "Not your bet");
+        require(market.status == MarketStatus.Resolved, "Market not resolved");
         require(!bet.claimed, "Already claimed");
 
         if (bet.outcomeIndex == market.winningOutcome) {
@@ -208,6 +199,7 @@ contract WorldCupBetting is ReentrancyGuard, Ownable {
         require(msg.sender == bet.bettor, "Not your bet");
         require(!bet.claimed, "Bet already claimed");
         require(markets[bet.marketId].status == MarketStatus.Open, "Market not open");
+        require(amount > 0, "Invalid amount");
 
         positionsForSale[betId] = true;
         positionPrices[betId] = amount;
@@ -215,8 +207,14 @@ contract WorldCupBetting is ReentrancyGuard, Ownable {
         emit PositionListed(betId, amount);
     }
 
-    function cancelListing(uint256) external {
-        _candidateStub();
+    function cancelListing(uint256 betId) external {
+        Bet storage bet = bets[betId];
+
+        require(msg.sender == bet.bettor, "Not your bet");
+        require(positionsForSale[betId], "Position not for sale");
+
+        positionsForSale[betId] = false;
+        positionPrices[betId] = 0;
     }
 
     function buyPosition(uint256 betId) external payable nonReentrant {
@@ -227,9 +225,14 @@ contract WorldCupBetting is ReentrancyGuard, Ownable {
         address seller = bet.bettor;
         uint256 price = positionPrices[betId];
 
+        require(!bet.claimed, "Bet already claimed");
+        require(market.status == MarketStatus.Open, "Market not open");
+        require(msg.sender != seller, "Cannot buy own position");
+
         // Update ownership
         bet.bettor = msg.sender;
         positionsForSale[betId] = false;
+        positionPrices[betId] = 0;
 
         // Update userBets mapping for new owner
         userBets[msg.sender].push(betId);
@@ -285,8 +288,12 @@ contract WorldCupBetting is ReentrancyGuard, Ownable {
         return (amount * 100 * totalPool) / (newPool * currentPool);
     }
 
-    function getPrice(uint256, uint256) public view returns (uint256) {
-        _candidateStub();
+    function getPrice(uint256 marketId, uint256 outcomeIndex) public view returns (uint256) {
+        uint256 pool = outcomePools[marketId][outcomeIndex];
+        uint256 total = getTotalPool(marketId);
+
+        if (total == 0) return 50;
+        return (pool * 100) / total;
     }
 
     function getTotalPool(uint256 marketId) public view returns (uint256) {

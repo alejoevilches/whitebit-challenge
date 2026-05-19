@@ -2,18 +2,6 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
 
-/**
- * World Cup on-chain betting assessment scenarios.
- *
- * By default these tests deploy `WorldCupBetting.sol` (stub -> all calls revert) so the suite is
- * RED until the candidate implements that contract.
- *
- * Instructors: run with WORLD_CUP_ASSESSMENT_SOLUTION=1 to deploy `PredictionMarket` instead and
- * verify that the scenario spec matches the reference implementation.
- *
- *   cd contracts && npx hardhat test test/WorldCupBetting.assessment.test.ts
- */
-
 const ASSESSMENT_CONTRACT =
   process.env.WORLD_CUP_ASSESSMENT_SOLUTION === "1" ? "PredictionMarket" : "WorldCupBetting";
 
